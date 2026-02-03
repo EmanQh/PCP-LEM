@@ -1,0 +1,93 @@
+# Adapted from local LEM.MPC & tested
+program.use_edabit(True)
+#program.use_split(3)
+#program.use_trunc_pr = True
+
+# *************************** Variables declaration ********************************
+number_of_sellers = 10
+number_of_buyers = 10
+number_of_selected_peers = 3
+
+# Bid/offer = (ID, sID, volume (Wh), Price ($/mWh), selected peers(ID, peerID, fee($/mWh)))
+sellers_offers = Matrix(number_of_sellers, 4 + (number_of_selected_peers * 3), sint)
+buyers_bids = Matrix(number_of_buyers, 4 + (number_of_selected_peers * 3), sint)
+
+# A = (ID,sID, selected peers (accepted_volume,network_fee))
+accepted_sellers_offers = Matrix(number_of_sellers, 8, sint)
+accepted_buyers_bids = Matrix(number_of_buyers, 8, sint)
+
+# *********************** Initialization (hardcoding) ***************************
+with open('./Programs/Source/LEM_Sellers - v2.txt','r') as file:
+  for i in range(number_of_sellers):
+    line = file.readline()
+    numbers = [int(word) for word in line.split()]
+    sellers_offers[i] = [sint(number) for number in numbers]
+
+with open('./Programs/Source/LEM_Buyers - v2.txt','r') as file:
+  for i in range(number_of_buyers):
+    line = file.readline()
+    numbers = [int(word) for word in line.split()]
+    buyers_bids[i] = [sint(number) for number in numbers]
+
+# ****************************** Shuffling *******************************************
+print_ln('Started shuffling ...')
+sellers_offers.secure_shuffle()
+buyers_bids.secure_shuffle()
+
+# ****************************** Sorting *******************************************
+print_ln('Started sorting ...')
+# both sellers bids and buyers offers are sorted in ascending order, so for allocation we loop through offers starting from last index.
+sellers_offers.sort([3])
+buyers_bids.sort([3])
+
+# Copy identifiers and fees
+accepted_sellers_offers.set_column(0,sellers_offers.get_column(0))
+accepted_sellers_offers.set_column(1,sellers_offers.get_column(1))
+accepted_buyers_bids.set_column(0,buyers_bids.get_column(0))
+accepted_buyers_bids.set_column(1,buyers_bids.get_column(1))
+
+for i, j in zip(range(3, 8, 2), range(6, 13, 3)):
+    accepted_buyers_bids.set_column(i,buyers_bids.get_column(j))
+    accepted_sellers_offers.set_column(i,sellers_offers.get_column(j))
+
+# ************************ Computing Trading Price **********************************
+print_ln('Started clearing price computation ...')
+trading_price = (sum(sellers_offers.get_column(3)) + sum(buyers_bids.get_column(3))).reveal()/(number_of_sellers + number_of_buyers)#.int_div(number_of_sellers + number_of_buyers)
+print_ln('Trading price is %s $/mWh',trading_price)
+
+# ***************************** Energy Allocation ******************************************
+print_ln('Started energy allocation ...')
+@for_range(number_of_sellers)
+def _(i):
+  @for_range(number_of_buyers-1,stop=-1,step=-1)
+  def _(j):
+    check_comp = buyers_bids[j][2] < sellers_offers[i][2] # check if buyer j volume is less than seller i volume
+    @for_range(number_of_selected_peers)
+    def _(k):
+      check = buyers_bids[j][0] == sellers_offers[i][5 + (3 * k)] # check if buyer j has been selected by seller i
+      @for_range(number_of_selected_peers)
+      def _(k2):
+          check2 = buyers_bids[j][5 + (3 * k2)] == sellers_offers[i][0] # check if buyer j has been selected by seller i
+          accepted_volume =  check2 * check * (check_comp * (buyers_bids[j][2] - sellers_offers[i][2]) + sellers_offers[i][2])
+          accepted_sellers_offers[i][2 +(2*k)] = accepted_sellers_offers[i][2 +(2*k)] + accepted_volume
+          accepted_buyers_bids[j][2 +(2*k2)] = accepted_buyers_bids[j][2 +(2*k2)] + accepted_volume
+          sellers_offers[i][2] = sellers_offers[i][2] - accepted_volume
+          buyers_bids[j][2] = buyers_bids[j][2] - accepted_volume
+
+# ***************************** Shuffling *******************************************
+# Shuffle the results before revealing IDs
+print_ln('Started shuffling ...')
+accepted_sellers_offers.secure_shuffle()
+accepted_buyers_bids.secure_shuffle()
+'''
+print_ln('Seller ID | Supplier | Accepted volume | Network Fee | Accepted volume | Network Fee | Accepted volume | Network Fee')
+@for_range_opt(number_of_sellers)
+def _(i):
+  print_ln('     %s    |     %s    |      %s Wh     |     %s $/mWh   |      %s Wh     |     %s $/mWh  |      %s Wh     |     %s $/mWh  ', accepted_sellers_offers[i][0].reveal(), accepted_sellers_offers[i][1].reveal(), accepted_sellers_offers[i][2].reveal(), accepted_sellers_offers[i][3].reveal(),accepted_sellers_offers[i][4].reveal(), accepted_sellers_offers[i][5].reveal(),accepted_sellers_offers[i][6].reveal(), accepted_sellers_offers[i][7].reveal() )
+
+print_ln('Buyer ID | Supplier | Accepted volume | Network Fee  | Accepted volume | Network Fee | Accepted volume | Network Fee')
+@for_range_opt(number_of_buyers-1,stop=0,step=-1)
+def _(i):
+  print_ln('     %s    |     %s    |      %s Wh     |     %s $/mWh   |      %s Wh     |     %s $/mWh  |      %s Wh     |     %s $/mWh  ', accepted_buyers_bids[i][0].reveal(), accepted_buyers_bids[i][1].reveal(), accepted_buyers_bids[i][2].reveal(), accepted_buyers_bids[i][3].reveal(), accepted_buyers_bids[i][4].reveal(), accepted_buyers_bids[i][5].reveal() ,accepted_buyers_bids[i][6].reveal(), accepted_buyers_bids[i][7].reveal() )
+'''
+print_ln('======================== Execution completed ==========================')
