@@ -9,7 +9,7 @@ mv Allocation/* MP-SPDZ/Programs/Source
 ```
 
 ## Running Market Clearance Allocation Programmes
-The instructions below show how to run the Opt2_LEM_P program with three parties using the protocol of [Araki et al.](https://eprint.iacr.org/2016/768). Other allocation programmes can be run similarly.
+The instructions below show how to run the Opt2_LEM program with three parties using the protocol of [Araki et al.](https://eprint.iacr.org/2016/768). Other allocation programmes can be run similarly.
 > Note: Parameters (e.g., computation domain) are set below based on our experimentation. If you would like to set different parameters or run the programmes with different protocols, feel free to refer to the full documentation of [MP-SPDZ](https://mp-spdz.readthedocs.io/en/latest/readme.html).
 
 1- Generate the necessary certificates and keys
@@ -24,8 +24,8 @@ make -j 8 replicated-field-party.x
 
 For running all parties on the same machine, compile and run the program as follows:  
 ```bash
-./compile.py -F 64 --budget 100000 Opt2_LEM_P
-Scripts/rep-field.sh Opt2_LEM_P -v
+./compile.py -F 64 --budget 100000 Opt2_LEM
+Scripts/rep-field.sh Opt2_LEM -v
 ```
 4- For remote execution
 
@@ -34,7 +34,7 @@ For running parties on different machines:
 2. Redistribute the data in ```Player-Data ``` to the other machines
 3. Compile and run the program:   
     ```bash
-    Scripts/compile-run.py --budget 100000 -H Hosts -F 64 -E rep-field Opt2_LEM_P -v
+    Scripts/compile-run.py --budget 100000 -H Hosts -F 64 -E rep-field Opt2_LEM -v
     ```
 ### Online-only benchmarking
 To benchmark only the online phase:
@@ -56,13 +56,13 @@ make -j 8 online
 ./compile.py -F 64 --budget 100000 LEM_Opt
 
 # Run on machine 0
-./replicated-field-party.x -p 0 Opt2_LEM_P -F -h HOST_OF_PARTY_0 -pn PORT_NUMBER --verbose
+./replicated-field-party.x -p 0 Opt2_LEM -F -h HOST_OF_PARTY_0 -pn PORT_NUMBER --verbose
 
 # Run on machine 1
-./replicated-field-party.x -p 1 Opt2_LEM_P -F -h HOST_OF_PARTY_0 -pn PORT_NUMBER --verbose
+./replicated-field-party.x -p 1 Opt2_LEM -F -h HOST_OF_PARTY_0 -pn PORT_NUMBER --verbose
 
 # Run on machine 2
-./replicated-field-party.x -p 2 Opt2_LEM_P -F -h HOST_OF_PARTY_0 -pn PORT_NUMBER --verbose
+./replicated-field-party.x -p 2 Opt2_LEM -F -h HOST_OF_PARTY_0 -pn PORT_NUMBER --verbose
 
 ```
 For local execution, omit -h and -pn, and execute the run commands in three separate terminals.
