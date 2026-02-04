@@ -10,7 +10,7 @@ mv Allocation/* MP-SPDZ/Programs/Source
 
 ## Running Market Clearance Allocation Programmes
 The instructions below show how to run the Opt2_LEM program with three parties using the protocol of [Araki et al.](https://eprint.iacr.org/2016/768). Other allocation programmes can be run similarly.
-> Note: Parameters (e.g., computation domain) are set below based on our experimentation. If you would like to set different parameters or run the programmes with different protocols, feel free to refer to the full documentation of [MP-SPDZ](https://mp-spdz.readthedocs.io/en/latest/readme.html).
+> Note: parameters (e.g., computation domain) are set below based on our experimentation. If you would like to set different parameters or run the programmes with different protocols, feel free to refer to the full documentation of [MP-SPDZ](https://mp-spdz.readthedocs.io/en/latest/readme.html).
 
 1- Generate the necessary certificates and keys
 ```bash
