@@ -1,4 +1,4 @@
-# Adapted from local LEM.MPC & tested
+# Adapted from local LEM_v3_with_fees_clean_for_Github & tested
 program.use_edabit(True)
 #program.use_split(3)
 #program.use_trunc_pr = True
@@ -16,27 +16,37 @@ buyers_bids = Matrix(number_of_buyers, 4 + (number_of_selected_peers * 3), sint)
 accepted_sellers_offers = Matrix(number_of_sellers, 8, sint)
 accepted_buyers_bids = Matrix(number_of_buyers, 8, sint)
 
+sellers_peers_mapping = Matrix(number_of_sellers, 3, cint)
+sellers_peers_mapping.assign_all(-1)
+buyers_peers_mapping = Matrix(number_of_buyers, 3, cint)
+buyers_peers_mapping.assign_all(-1)
+
+sellers_masked_equality = Matrix(number_of_sellers, 3, cint)
+#sellers_masked_equality.assign_all(0)
+buyers_masked_equality = Matrix(number_of_buyers, 3, cint)
+#buyers_masked_equality.assign_all(0)
+r = Matrix(number_of_sellers, 3, sint)
+
 # *********************** Initialization (hardcoding) ***************************
-with open('./Programs/Source/LEM_Sellers - v2.txt','r') as file:
+with open('./Programs/Source/LEM_Sellers.txt','r') as file:
   for i in range(number_of_sellers):
     line = file.readline()
     numbers = [int(word) for word in line.split()]
     sellers_offers[i] = [sint(number) for number in numbers]
 
-with open('./Programs/Source/LEM_Buyers - v2.txt','r') as file:
+with open('./Programs/Source/LEM_Buyers.txt','r') as file:
   for i in range(number_of_buyers):
     line = file.readline()
     numbers = [int(word) for word in line.split()]
     buyers_bids[i] = [sint(number) for number in numbers]
 
-# ****************************** Shuffling *******************************************
+# ***************************** Shuffling *****************************************
 print_ln('Started shuffling ...')
 sellers_offers.secure_shuffle()
 buyers_bids.secure_shuffle()
 
 # ****************************** Sorting *******************************************
 print_ln('Started sorting ...')
-# both sellers bids and buyers offers are sorted in ascending order, so for allocation we loop through offers starting from last index.
 sellers_offers.sort([3])
 buyers_bids.sort([3])
 
@@ -50,35 +60,78 @@ for i, j in zip(range(3, 8, 2), range(6, 13, 3)):
     accepted_buyers_bids.set_column(i,buyers_bids.get_column(j))
     accepted_sellers_offers.set_column(i,sellers_offers.get_column(j))
 
+# ****************************** Mappings Prep ***************************************
+# Mapping: mask and open the IDs, then do equality tests in clear.
+def prepare_mapping_table():
+# Prepare sellers mapping table
+  @for_range_opt_multithread(32, number_of_sellers)
+  def _(i):
+    @for_range_opt(number_of_selected_peers)
+    def _(k):
+      @for_range_opt(number_of_buyers)
+      def _(j):
+        r[i][k] = sint.get_random_int(64)
+        sellers_masked_equality[i][k] = ((sellers_offers[i][2 + (k+1)*3] * r[i][k]) - (buyers_bids[j][0] * r[i][k])).reveal() == 0
+        # Update mapping if IDs match (store index of buyer j)
+        sellers_peers_mapping[i][k] = sellers_peers_mapping[i][k] * (1 - sellers_masked_equality[i][k]) + (sellers_masked_equality[i][k] * j)
+# Prepare buyers mapping table
+  @for_range_opt_multithread(32, number_of_buyers)
+  def _(j):
+    @for_range_opt(number_of_selected_peers)
+    def _(k):
+      @for_range_opt(number_of_sellers)
+      def _(i):
+        # Random masking for secure equality testing
+        r[j][k] = sint.get_random_int(64)
+        buyers_masked_equality[j][k] = ((buyers_bids[j][5 + (3*k)] * r[j][k]) - (sellers_offers[i][0] * r[j][k])).reveal() == 0
+        # Update mapping if IDs match (store index of seller i)
+        buyers_peers_mapping[j][k] = buyers_peers_mapping[j][k] * (1 - buyers_masked_equality[j][k]) + (buyers_masked_equality[j][k] * i)
+
 # ************************ Computing Trading Price **********************************
 print_ln('Started clearing price computation ...')
 trading_price = (sum(sellers_offers.get_column(3)) + sum(buyers_bids.get_column(3))).reveal()/(number_of_sellers + number_of_buyers)#.int_div(number_of_sellers + number_of_buyers)
 print_ln('Trading price is %s $/mWh',trading_price)
 
+# ************************** Check mutual selection **************************
+def check_mutual_selection(k,j,i):
+  if k < 3:
+    return ((buyers_bids[j][5 + (3*k)] == sellers_offers[i][0]).reveal()).if_else(k,check_mutual_selection(k+1,j,i))
+  else:
+    return -1
+
+print_ln('Started mapping ...')
+prepare_mapping_table()
+
 # ***************************** Energy Allocation ******************************************
 print_ln('Started energy allocation ...')
 @for_range(number_of_sellers)
 def _(i):
-  @for_range(number_of_buyers-1,stop=-1,step=-1)
+  @for_range(number_of_buyers-1,stop=-1, step=-1)
   def _(j):
-    check_comp = buyers_bids[j][2] < sellers_offers[i][2] # check if buyer j volume is less than seller i volume
     @for_range(number_of_selected_peers)
     def _(k):
-      check = buyers_bids[j][0] == sellers_offers[i][5 + (3 * k)] # check if buyer j has been selected by seller i
-      @for_range(number_of_selected_peers)
-      def _(k2):
-          check2 = buyers_bids[j][5 + (3 * k2)] == sellers_offers[i][0] # check if buyer j has been selected by seller i
-          accepted_volume =  check2 * check * (check_comp * (buyers_bids[j][2] - sellers_offers[i][2]) + sellers_offers[i][2])
-          accepted_sellers_offers[i][2 +(2*k)] = accepted_sellers_offers[i][2 +(2*k)] + accepted_volume
-          accepted_buyers_bids[j][2 +(2*k2)] = accepted_buyers_bids[j][2 +(2*k2)] + accepted_volume
-          sellers_offers[i][2] = sellers_offers[i][2] - accepted_volume
-          buyers_bids[j][2] = buyers_bids[j][2] - accepted_volume
+      stored_j = sellers_peers_mapping[i][k]
+      @if_( j == stored_j)
+      def _():
+#        k2 = check_mutual_selection(0,j,i)
+#        @if_(k2 != -1)
+#        def _():
+        @for_range(number_of_selected_peers)
+        def _(k2):
+          stored_i = buyers_peers_mapping[j][k2]
+          @if_(i == stored_i)
+          def _():
+              check2 = buyers_bids[j][2] <= sellers_offers[i][2] # check if buyer j volume is less than seller i volume
+              accepted_volume = check2 * (buyers_bids[j][2] - sellers_offers[i][2]) + sellers_offers[i][2]
+              accepted_sellers_offers[i][2 +(2*k)] = accepted_buyers_bids[j][2 +(2*k2)] = accepted_volume
+              sellers_offers[i][2] = sellers_offers[i][2] - accepted_volume
+              buyers_bids[j][2] = buyers_bids[j][2] - accepted_volume
 
-# ***************************** Shuffling *******************************************
 # Shuffle the results before revealing IDs
 print_ln('Started shuffling ...')
 accepted_sellers_offers.secure_shuffle()
 accepted_buyers_bids.secure_shuffle()
+
 '''
 print_ln('Seller ID | Supplier | Accepted volume | Network Fee | Accepted volume | Network Fee | Accepted volume | Network Fee')
 @for_range_opt(number_of_sellers)
@@ -86,8 +139,9 @@ def _(i):
   print_ln('     %s    |     %s    |      %s Wh     |     %s $/mWh   |      %s Wh     |     %s $/mWh  |      %s Wh     |     %s $/mWh  ', accepted_sellers_offers[i][0].reveal(), accepted_sellers_offers[i][1].reveal(), accepted_sellers_offers[i][2].reveal(), accepted_sellers_offers[i][3].reveal(),accepted_sellers_offers[i][4].reveal(), accepted_sellers_offers[i][5].reveal(),accepted_sellers_offers[i][6].reveal(), accepted_sellers_offers[i][7].reveal() )
 
 print_ln('Buyer ID | Supplier | Accepted volume | Network Fee  | Accepted volume | Network Fee | Accepted volume | Network Fee')
-@for_range_opt(number_of_buyers-1,stop=0,step=-1)
+@for_range_opt(number_of_buyers)
 def _(i):
   print_ln('     %s    |     %s    |      %s Wh     |     %s $/mWh   |      %s Wh     |     %s $/mWh  |      %s Wh     |     %s $/mWh  ', accepted_buyers_bids[i][0].reveal(), accepted_buyers_bids[i][1].reveal(), accepted_buyers_bids[i][2].reveal(), accepted_buyers_bids[i][3].reveal(), accepted_buyers_bids[i][4].reveal(), accepted_buyers_bids[i][5].reveal() ,accepted_buyers_bids[i][6].reveal(), accepted_buyers_bids[i][7].reveal() )
 '''
+
 print_ln('======================== Execution completed ==========================')
