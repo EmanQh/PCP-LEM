@@ -50,7 +50,7 @@ make -j 8 online
 ```
 4- Redistribute the generated data in ```Player-Data``` to the other machines
 
-5- For remote remote execution, compile and run the program on three machines as follows:
+5- For remote execution, compile and run the program on three machines as follows:
  ```bash
 # Compile the program
 ./compile.py -F 64 --budget 100000 LEM_Opt
