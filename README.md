@@ -1,5 +1,5 @@
 # MP-SPDZ Implemntation of Privacy-Preserving Local Energy Market Protocol 
-This is an [MP-SPDZ](https://github.com/data61/MP-SPDZ) Implemntation of the Privacy-Preserving Local Energy Market Protocol descibed in [to be updated]. 
+This is an [MP-SPDZ](https://github.com/data61/MP-SPDZ) implementation of the Privacy-Preserving Local Energy Market Protocol described in [to be updated]. 
 
 ## Installation
 ```
